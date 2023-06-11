@@ -12,6 +12,7 @@ const HISTORY_LENGTH = 365;
 const INSTANCE = 'botsin.space';
 
 async function getLinkAggregatorUserCounts(): Promise<{ lemmy: UserCount; kbin: UserCount }> {
+	console.log('Fetching user counts...');
 	const response = await fetch('https://api.fedidb.org/v1/software?limit=40');
 	const json = await response.json();
 	const lemmy = json.data.find((software) => software.name.toLowerCase() === 'lemmy');
@@ -29,6 +30,7 @@ async function getLinkAggregatorUserCounts(): Promise<{ lemmy: UserCount; kbin: 
 }
 
 async function handleHistory({ KV }: Env, software: string, count: UserCount): Promise<StatHistory[]> {
+	console.log('Handling history for ' + software);
 	const historyRaw = await KV.get(software);
 	let history: StatHistory[] = JSON.parse(historyRaw || '[]');
 	history.push({ date: new Date(), users: count });
@@ -60,13 +62,14 @@ export const postToMastodon = async (env: Env) => {
 	const endpoint = `https://${INSTANCE}/api/v1/statuses`;
 	const payload = {
 		status: `
-${totalSum.toLocaleString()} accounts
+${totalSum.toLocaleString()} Lemmy/kbin accounts
 ${oneDayAgo > 0 ? '+' : ''}${oneDayAgo.toLocaleString()} in the last day
 ${mauSum.toLocaleString()} monthly active users
 		`,
 		media_ids: [],
 		visiblity: 'secret',
 	};
+	console.log('Posting to Mastodon');
 	await fetch(endpoint, {
 		method: 'POST',
 		body: JSON.stringify(payload),
