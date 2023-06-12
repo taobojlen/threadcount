@@ -8,7 +8,7 @@ interface StatHistory {
 	users: UserCount;
 }
 
-const HISTORY_LENGTH = 365;
+const HISTORY_LENGTH = 336; // 2 weeks of hourly data
 const INSTANCE = 'botsin.space';
 
 async function getLinkAggregatorUserCounts(): Promise<{ lemmy: UserCount; kbin: UserCount }> {
@@ -56,18 +56,18 @@ export const postToMastodon = async (env: Env) => {
 	const kbinHistory = await handleHistory(env, 'kbin', kbin);
 
 	const totalSum = kbin.total + lemmy.total;
-	const oneDayAgo = getUserDiff(lemmyHistory, 1) + getUserDiff(kbinHistory, 1);
+	const oneHourAgo = getUserDiff(lemmyHistory, 1) + getUserDiff(kbinHistory, 1);
 	const mauSum = kbin.mau + lemmy.mau;
 
 	const endpoint = `https://${INSTANCE}/api/v1/statuses`;
 	const payload = {
 		status: `
 ${totalSum.toLocaleString()} Lemmy/kbin accounts
-${oneDayAgo > 0 ? '+' : ''}${oneDayAgo.toLocaleString()} in the last day
+${oneHourAgo > 0 ? '+' : ''}${oneHourAgo.toLocaleString()} in the last hour
 ${mauSum.toLocaleString()} monthly active users
 		`,
 		media_ids: [],
-		visiblity: 'secret',
+		visibility: 'public',
 	};
 	console.log('Posting to Mastodon');
 	await fetch(endpoint, {

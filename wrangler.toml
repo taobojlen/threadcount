@@ -2,6 +2,7 @@ name = "threadcount"
 main = "src/worker.ts"
 compatibility_date = "2023-06-11"
 usage_model = "unbound"
+logpush = true
 
 # # KV Namespace binding - For more information: https://developers.cloudflare.com/workers/runtime-apis/kv
 [[kv_namespaces]]
@@ -41,4 +42,4 @@ preview_id = "f84425a93052431e957b39a202b0e9ab"
 # SHARED_VARIABLE = "shared_value"
 
 [triggers]
-crons = ["0 14 * * *"]
+crons = ["0 * * * *"]
