@@ -14,6 +14,7 @@ const INSTANCE = 'botsin.space';
 async function getLinkAggregatorUserCounts(): Promise<{ lemmy: UserCount; kbin: UserCount }> {
 	console.log('Fetching user counts...');
 	const response = await fetch('https://api.fedidb.org/v1/software?limit=40');
+	if (!response.ok) throw new Error('Failed to fetch user counts');
 	const json = await response.json();
 	const lemmy = json.data.find((software) => software.name.toLowerCase() === 'lemmy');
 	const kbin = json.data.find((software) => software.name.toLowerCase() === 'kbin');

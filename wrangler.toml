@@ -42,4 +42,4 @@ preview_id = "f84425a93052431e957b39a202b0e9ab"
 # SHARED_VARIABLE = "shared_value"
 
 [triggers]
-crons = ["0 * * * *"]
+crons = ["30 * * * *"]
