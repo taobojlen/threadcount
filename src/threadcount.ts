@@ -4,37 +4,31 @@ interface UserCount {
 }
 
 interface StatHistory {
-	date: Date;
+	date: string;
 	users: UserCount;
 }
 
 const HISTORY_LENGTH = 336; // 2 weeks of hourly data
 const INSTANCE = 'botsin.space';
 
-async function getLinkAggregatorUserCounts(): Promise<{ lemmy: UserCount; kbin: UserCount }> {
-	console.log('Fetching user counts...');
-	const response = await fetch('https://api.fedidb.org/v1/software?limit=40');
-	if (!response.ok) throw new Error('Failed to fetch user counts');
+async function getStatsForSoftware(env: Env, software: string): Promise<StatHistory[]> {
+	console.log('Fetching stats for ' + software);
+	const response = await fetch(`https://api.fedidb.org/v1/software/${software.toLowerCase()}`);
+	if (!response.ok) throw new Error('Failed to fetch stats for ' + software);
 	const json = await response.json();
-	const lemmy = json.data.find((software) => software.name.toLowerCase() === 'lemmy');
-	const kbin = json.data.find((software) => software.name.toLowerCase() === 'kbin');
-	return {
-		lemmy: {
-			total: lemmy?.user_count || 0,
-			mau: lemmy?.monthly_active_users || 0,
-		},
-		kbin: {
-			total: kbin?.user_count || 0,
-			mau: kbin?.monthly_active_users || 0,
-		},
+	const stats = {
+		total: json.data.user_count || 0,
+		mau: json.data.monthly_active_users || 0,
 	};
+	const history = await handleHistory(env, software, stats);
+	return history;
 }
 
 async function handleHistory({ KV }: Env, software: string, count: UserCount): Promise<StatHistory[]> {
 	console.log('Handling history for ' + software);
 	const historyRaw = await KV.get(software);
 	let history: StatHistory[] = JSON.parse(historyRaw || '[]');
-	history.push({ date: new Date(), users: count });
+	history.push({ date: new Date().toISOString(), users: count });
 	if (history.length > HISTORY_LENGTH) {
 		history = history.slice(history.length - HISTORY_LENGTH);
 	}
@@ -50,15 +44,109 @@ function getUserDiff(history: StatHistory[], interval: number) {
 	return today.total - past.total;
 }
 
+async function generateChart(lemmyHistory: StatHistory[], kbinHistory: StatHistory[]) {
+	const labels = lemmyHistory.map((point) => point.date);
+	const lemmyData = lemmyHistory.map((point) => point.users.total);
+	const kbinData = kbinHistory.map((point) => point.users.total);
+
+	const summedData = lemmyData.map((lemmyCount, i) => lemmyCount + kbinData[i]);
+
+	const chart = {
+		type: 'line',
+		data: {
+			labels: labels,
+			datasets: [
+				{
+					data: summedData,
+					fill: true,
+					borderColor: '#32A467',
+					backgroundColor: 'rgba(22, 90, 54, 0.4)',
+				},
+			],
+		},
+		options: {
+			elements: {
+				point: {
+					radius: 0,
+				},
+			},
+			legend: {
+				display: false,
+			},
+			scales: {
+				xAxes: [
+					{
+						display: true,
+						type: 'time',
+						ticks: {
+							fontColor: 'white',
+							stepSize: 1,
+						},
+						time: {
+							unit: 'day',
+						},
+					},
+				],
+				yAxes: [
+					{
+						scaleLabel: {
+							display: true,
+							labelString: '# users',
+							fontColor: 'white',
+						},
+						display: true,
+						ticks: {
+							fontColor: 'white',
+							precision: 0,
+						},
+					},
+				],
+			},
+		},
+	};
+
+	const url = `https://quickchart.io/chart?backgroundColor=${encodeURIComponent('#383E47')}&chart=${encodeURIComponent(
+		JSON.stringify(chart)
+	)}`;
+	console.log('Chart URL:', url);
+	const response = await fetch(url);
+	if (!response.ok) throw new Error(`Failed to generate chart`);
+	return { url, buffer: await response.arrayBuffer() };
+}
+
+async function uploadMedia(env: Env, buffer: ArrayBuffer, filename: string): Promise<string> {
+	const endpoint = `https://${INSTANCE}/api/v2/media`;
+	let formData = new FormData();
+	formData.append('file', new Blob([buffer]), filename);
+	formData.append('description', 'Chart showing Lemmy/kbin user count over time');
+
+	const response = await fetch(endpoint, {
+		method: 'POST',
+		body: formData,
+		headers: {
+			Authorization: `Bearer ${env.MASTODON_TOKEN}`,
+		},
+	});
+	if (!response.ok) {
+		throw new Error('Failed to upload media: ' + (await response.text()));
+	}
+
+	const json = await response.json();
+	return json.id;
+}
+
 export const postToMastodon = async (env: Env) => {
-	const { lemmy, kbin } = await getLinkAggregatorUserCounts();
-	// Save to KV
-	const lemmyHistory = await handleHistory(env, 'lemmy', lemmy);
-	const kbinHistory = await handleHistory(env, 'kbin', kbin);
+	const lemmyHistory = await getStatsForSoftware(env, 'lemmy');
+	const kbinHistory = await getStatsForSoftware(env, 'kbin');
+	const lemmy = lemmyHistory[lemmyHistory.length - 1].users;
+	const kbin = kbinHistory[kbinHistory.length - 1].users;
 
 	const totalSum = kbin.total + lemmy.total;
 	const oneHourAgo = getUserDiff(lemmyHistory, 1) + getUserDiff(kbinHistory, 1);
 	const mauSum = kbin.mau + lemmy.mau;
+
+	const combinedChart = await generateChart(lemmyHistory, kbinHistory);
+	const mediaID = await uploadMedia(env, combinedChart.buffer, 'combined.png');
 
 	const endpoint = `https://${INSTANCE}/api/v1/statuses`;
 	const payload = {
@@ -67,8 +155,8 @@ ${totalSum.toLocaleString()} Lemmy/kbin accounts
 ${oneHourAgo > 0 ? '+' : ''}${oneHourAgo.toLocaleString()} in the last hour
 ${mauSum.toLocaleString()} monthly active users
 		`,
-		media_ids: [],
-		visibility: 'public',
+		media_ids: [mediaID],
+		visibility: 'private',
 	};
 	console.log('Posting to Mastodon');
 	await fetch(endpoint, {
