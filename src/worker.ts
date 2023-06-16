@@ -7,11 +7,17 @@
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
-import { postToMastodon } from './threadcount';
+import { updateStats, updateStatsAndPost } from './threadcount';
 
 // Export a default object containing event handlers
 export default {
 	async scheduled(event, env, ctx) {
-		ctx.waitUntil(postToMastodon(env));
+		// only post on the hour
+		if (event.cron.startsWith('0 *')) {
+			ctx.waitUntil(updateStatsAndPost(env));
+		} else {
+			// but fetch data every 30 mins
+			ctx.waitUntil(updateStats(env));
+		}
 	},
 };

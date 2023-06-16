@@ -11,6 +11,22 @@ interface StatHistory {
 const HISTORY_LENGTH = 336; // 2 weeks of hourly data
 const INSTANCE = 'botsin.space';
 
+function getClosestHistory(history: StatHistory[], targetDate: Date): StatHistory | null {
+	if (history.length === 0) {
+		return null;
+	}
+
+	return [...history].reduce((prev, curr) => {
+		const currDate = new Date(curr.date);
+		const prevDate = new Date(prev.date);
+
+		const currDiff = Math.abs(currDate.getTime() - targetDate.getTime());
+		const prevDiff = Math.abs(prevDate.getTime() - targetDate.getTime());
+
+		return currDiff < prevDiff ? curr : prev;
+	});
+}
+
 async function getStatsForSoftware(env: Env, software: string): Promise<StatHistory[]> {
 	console.log('Fetching stats for ' + software);
 	const response = await fetch(`https://api.fedidb.org/v1/software/${software.toLowerCase()}`);
@@ -18,7 +34,7 @@ async function getStatsForSoftware(env: Env, software: string): Promise<StatHist
 	const json = await response.json();
 	const stats = {
 		total: json.data.user_count || 0,
-		mau: json.data.monthly_active_users || 0,
+		mau: json.data.monthly_actives || 0,
 	};
 	const history = await handleHistory(env, software, stats);
 	return history;
@@ -36,15 +52,8 @@ async function handleHistory({ KV }: Env, software: string, count: UserCount): P
 	return history;
 }
 
-function getUserDiff(history: StatHistory[], interval: number) {
-	const today = history[history.length - 1].users;
-	if (history.length < interval) return today.total;
-
-	const past = history[history.length - 1 - interval].users;
-	return today.total - past.total;
-}
-
 async function generateChart(lemmyHistory: StatHistory[], kbinHistory: StatHistory[]) {
+	console.log('Generating chart with ' + lemmyHistory.length + ' points');
 	const labels = lemmyHistory.map((point) => point.date);
 	const lemmyData = lemmyHistory.map((point) => point.users.total);
 	const kbinData = kbinHistory.map((point) => point.users.total);
@@ -135,14 +144,28 @@ async function uploadMedia(env: Env, buffer: ArrayBuffer, filename: string): Pro
 	return json.id;
 }
 
-export const postToMastodon = async (env: Env) => {
+export const updateStats = async (env: Env) => {
+	console.log('Updating stats');
+	await getStatsForSoftware(env, 'lemmy');
+	await getStatsForSoftware(env, 'kbin');
+};
+
+export const updateStatsAndPost = async (env: Env) => {
+	console.log('Updating stats and posting');
 	const lemmyHistory = await getStatsForSoftware(env, 'lemmy');
 	const kbinHistory = await getStatsForSoftware(env, 'kbin');
 	const lemmy = lemmyHistory[lemmyHistory.length - 1].users;
 	const kbin = kbinHistory[kbinHistory.length - 1].users;
 
 	const totalSum = kbin.total + lemmy.total;
-	const oneHourAgo = getUserDiff(lemmyHistory, 1) + getUserDiff(kbinHistory, 1);
+	let oneHourAgo = new Date();
+	oneHourAgo.setHours(oneHourAgo.getTime() - 1000 * 60 * 60);
+	const lemmyOneHourAgoStats = getClosestHistory(lemmyHistory, oneHourAgo)?.users.total || 0;
+	const kbinOneHourAgoStats = getClosestHistory(kbinHistory, oneHourAgo)?.users.total || 0;
+	const usersOneHourAgo = lemmyOneHourAgoStats + kbinOneHourAgoStats;
+	console.log(`Total: ${totalSum}, 1h ago: ${usersOneHourAgo}`);
+	const userDiff = totalSum - usersOneHourAgo;
+
 	const mauSum = kbin.mau + lemmy.mau;
 
 	const combinedChart = await generateChart(lemmyHistory, kbinHistory);
@@ -152,12 +175,13 @@ export const postToMastodon = async (env: Env) => {
 	const payload = {
 		status: `
 ${totalSum.toLocaleString()} Lemmy/kbin accounts
-${oneHourAgo > 0 ? '+' : ''}${oneHourAgo.toLocaleString()} in the last hour
+${userDiff > 0 ? '+' : ''}${userDiff.toLocaleString()} in the last hour
 ${mauSum.toLocaleString()} monthly active users
 		`,
 		media_ids: [mediaID],
-		visibility: 'private',
+		visibility: 'public',
 	};
+	console.log(payload);
 	console.log('Posting to Mastodon');
 	await fetch(endpoint, {
 		method: 'POST',
