@@ -159,7 +159,7 @@ export const updateStatsAndPost = async (env: Env) => {
 
 	const totalSum = kbin.total + lemmy.total;
 	let oneHourAgo = new Date();
-	oneHourAgo.setHours(oneHourAgo.getTime() - 1000 * 60 * 60);
+	oneHourAgo.setTime(oneHourAgo.getTime() - 1000 * 60 * 60);
 	const lemmyOneHourAgoStats = getClosestHistory(lemmyHistory, oneHourAgo)?.users.total || 0;
 	const kbinOneHourAgoStats = getClosestHistory(kbinHistory, oneHourAgo)?.users.total || 0;
 	const usersOneHourAgo = lemmyOneHourAgoStats + kbinOneHourAgoStats;
