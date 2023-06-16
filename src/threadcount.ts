@@ -8,7 +8,7 @@ interface StatHistory {
 	users: UserCount;
 }
 
-const HISTORY_LENGTH = 336; // 2 weeks of hourly data
+const HISTORY_LENGTH = 672; // 2 weeks of half-hourly data
 const INSTANCE = 'botsin.space';
 
 function getClosestHistory(history: StatHistory[], targetDate: Date): StatHistory | null {
