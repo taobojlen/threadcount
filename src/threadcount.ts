@@ -60,67 +60,70 @@ async function generateChart(lemmyHistory: StatHistory[], kbinHistory: StatHisto
 
 	const summedData = lemmyData.map((lemmyCount, i) => lemmyCount + kbinData[i]);
 
-	const chart = {
-		type: 'line',
-		data: {
-			labels: labels,
-			datasets: [
-				{
-					data: summedData,
-					fill: true,
-					borderColor: '#32A467',
-					backgroundColor: 'rgba(22, 90, 54, 0.4)',
-				},
-			],
-		},
-		options: {
-			elements: {
-				point: {
-					radius: 0,
-				},
-			},
-			legend: {
-				display: false,
-			},
-			scales: {
-				xAxes: [
+	const payload = {
+		backgroundColor: '#383E47',
+		chart: {
+			type: 'line',
+			data: {
+				labels: labels,
+				datasets: [
 					{
-						display: true,
-						type: 'time',
-						ticks: {
-							fontColor: 'white',
-							stepSize: 1,
-						},
-						time: {
-							unit: 'day',
-						},
+						data: summedData,
+						fill: true,
+						borderColor: '#32A467',
+						backgroundColor: 'rgba(22, 90, 54, 0.4)',
 					},
 				],
-				yAxes: [
-					{
-						scaleLabel: {
+			},
+			options: {
+				elements: {
+					point: {
+						radius: 0,
+					},
+				},
+				legend: {
+					display: false,
+				},
+				scales: {
+					xAxes: [
+						{
 							display: true,
-							labelString: '# users',
-							fontColor: 'white',
+							type: 'time',
+							ticks: {
+								fontColor: 'white',
+								stepSize: 1,
+							},
+							time: {
+								unit: 'day',
+							},
 						},
-						display: true,
-						ticks: {
-							fontColor: 'white',
-							precision: 0,
+					],
+					yAxes: [
+						{
+							scaleLabel: {
+								display: true,
+								labelString: '# users',
+								fontColor: 'white',
+							},
+							display: true,
+							ticks: {
+								fontColor: 'white',
+								precision: 0,
+							},
 						},
-					},
-				],
+					],
+				},
 			},
 		},
 	};
 
-	const url = `https://quickchart.io/chart?backgroundColor=${encodeURIComponent('#383E47')}&chart=${encodeURIComponent(
-		JSON.stringify(chart)
-	)}`;
-	console.log('Chart URL:', url);
-	const response = await fetch(url);
-	if (!response.ok) throw new Error(`Failed to generate chart`);
-	return { url, buffer: await response.arrayBuffer() };
+	const response = await fetch('https://quickchart.io/chart', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(payload),
+	});
+	if (!response.ok) throw new Error(`Failed to generate chart: ${await response.text()}}`);
+	return { buffer: await response.arrayBuffer() };
 }
 
 async function uploadMedia(env: Env, buffer: ArrayBuffer, filename: string): Promise<string> {
@@ -168,8 +171,8 @@ export const updateStatsAndPost = async (env: Env) => {
 
 	const mauSum = kbin.mau + lemmy.mau;
 
-	const combinedChart = await generateChart(lemmyHistory, kbinHistory);
-	const mediaID = await uploadMedia(env, combinedChart.buffer, 'combined.png');
+	const { buffer: chart } = await generateChart(lemmyHistory, kbinHistory);
+	const mediaID = await uploadMedia(env, chart, 'combined.png');
 
 	const endpoint = `https://${INSTANCE}/api/v1/statuses`;
 	const payload = {
